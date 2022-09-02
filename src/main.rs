@@ -35,7 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .short("p")
                 .long("port")
                 .help("Set port to listen on")
-                .env("ELASTIC_BILLING_EXPORTER_LISTEN_PORT")
+                .env("ATLAS_BILLING_EXPORTER_LISTEN_PORT")
                 .default_value("8080")
                 .takes_value(true),
         )
@@ -45,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .long("timeout")
                 .help("Set default global timeout")
                 .default_value("60")
-                .env("ELASTIC_BILLING_EXPORTER_TIMEOUT")
+                .env("ATLAS_BILLING_EXPORTER_TIMEOUT")
                 .takes_value(true),
         )
         .arg(
@@ -54,7 +54,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .long("url")
                 .help("Set elastic reverse proxy")
                 .required(true)
-                .env("ELASTIC_BILLING_EXPORTER_REVERSE_PROXY")
+                .env("ATLAS_BILLING_EXPORTER_REVERSE_PROXY")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("org")
+                .short("o")
+                .long("org")
+                .help("Set org id")
+                .required(true)
+                .env("ATLAS_BILLING_EXPORTER_ORG_ID")
                 .takes_value(true),
         )
         .get_matches();
