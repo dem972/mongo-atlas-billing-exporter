@@ -15,7 +15,7 @@ pub fn setup_metrics_recorder() -> PrometheusHandle {
             Some(Duration::from_secs(10)),
         )
         .set_buckets_for_metric(
-            Matcher::Full("http_requests_duration_seconds".to_string()),
+            Matcher::Full("atlas_billing_http_requests_duration_seconds".to_string()),
             EXPONENTIAL_SECONDS,
         )
         .unwrap()
@@ -38,7 +38,7 @@ pub async fn track_metrics<B>(req: Request<B>, next: Next<B>) -> impl IntoRespon
     ];
 
     metrics::increment_counter!("http_requests_total", &labels);
-    metrics::histogram!("http_requests_duration_seconds", latency, &labels);
+    metrics::histogram!("atlas_billing_http_requests_duration_seconds", latency, &labels);
 
     response
 }
