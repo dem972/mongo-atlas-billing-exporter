@@ -46,7 +46,8 @@ pub struct Compressed {
     sku: String,
     total_price_cents: u64,
     unit: String,
-    unit_price_dollars: f64
+    unit_price_dollars: f64,
+    end_date: String
 }
 
 #[derive(Clone, Debug)]
@@ -151,7 +152,8 @@ impl State {
                         sku: item.sku.clone(),
                         total_price_cents: item.total_price_cents.clone(),
                         unit: item.unit.clone(),
-                        unit_price_dollars: item.unit_price_dollars.clone()
+                        unit_price_dollars: item.unit_price_dollars.clone(),
+                        end_date: item.end_date.clone()
                     };
                     map.insert(name, value);
                 }
@@ -160,13 +162,25 @@ impl State {
 
         log::debug!("{:?}", map);
 
-        for (_key, value) in map {
+        for (key, value) in map {
             let labels = [
                 ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
             ];
             metrics::gauge!("atlas_billing_item_cents_total", value.total_price_cents.clone() as f64, &labels);
-            metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars.clone() as f64, &labels);
+
+            match chrono::DateTime::parse_from_rfc3339(&value.end_date) {
+                Ok(end_date) => {
+                    if chrono::Utc::now() - end_date.with_timezone(&chrono::Utc) < chrono::Duration::days(1) {
+                        metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars.clone() as f64, &labels);
+                    } else {
+                        log::debug!("Skipping {}, as it is more than one day old", key);
+                    }
+                },
+                Err(e) => {
+                    log::error!("Error converting end_date to Utc, skipping {}: {}", key, e);
+                }
+            }
         }
             
 
