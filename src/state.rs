@@ -171,7 +171,7 @@ impl State {
 
             match chrono::DateTime::parse_from_rfc3339(&value.end_date) {
                 Ok(end_date) => {
-                    if chrono::Utc::now() - end_date.with_timezone(&chrono::Utc) < chrono::Duration::days(1) {
+                    if chrono::Utc::now() - end_date.with_timezone(&chrono::Utc) < chrono::Duration::days(1) + chrono::Duration::hours(1) {
                         metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars.clone() as f64, &labels);
                     } else {
                         log::debug!("Skipping {}, as it is more than one day old", key);
