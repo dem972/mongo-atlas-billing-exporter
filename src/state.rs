@@ -143,7 +143,9 @@ impl State {
                     k.total_price_cents = k.total_price_cents + item.total_price_cents;
                     k.quantity = k.quantity + item.quantity;
                     k.unit_price_dollars = item.unit_price_dollars;
-                    k.end_date = item.end_date;
+                    if item.end_date > k.end_date {
+                        k.end_date = item.end_date;
+                    };
                 },
                 None => {
                     log::debug!("Did not find existing {} in map", &name);
