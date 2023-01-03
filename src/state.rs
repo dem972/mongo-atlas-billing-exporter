@@ -230,7 +230,7 @@ impl State {
             ];
 
             // Get overall rate in dollars
-            let rate = value.total_price_cents as f64 / value.quantity / 100;
+            let rate = value.total_price_cents as f64 / value.quantity / 100.0;
             metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
         }
 
