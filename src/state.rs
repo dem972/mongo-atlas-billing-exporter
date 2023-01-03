@@ -182,7 +182,7 @@ impl State {
                         log::debug!("Including {}. Difference is {}", key, difference);
 
                         // Get overall rate
-                        let rate = value.quantity / value.total_price_cents as f64;
+                        let rate = value.total_price_cents as f64 / value.quantity;
                         metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
                     } else {
                         log::debug!("Skipping {}, as it is more than one day old. Difference is {}, and is more than {}", key, difference, chrono::Duration::hours(30));
