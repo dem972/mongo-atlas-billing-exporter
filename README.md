@@ -1,1 +1,1 @@
-# Elastic Cloud Billing Exporter
+# MongoDB Atlas Billing Exporter
