@@ -31,6 +31,7 @@ pub struct LineItem {
     created: String,
     end_date: String,
     quantity: f64,
+    group_name: Option<String>,
     sku: String,
     start_date: String,
     total_price_cents: u64,
@@ -43,6 +44,7 @@ pub struct LineItem {
 pub struct Compressed {
     cluster_name: Option<String>,
     quantity: f64,
+    group_name: Option<String>,
     sku: String,
     total_price_cents: u64,
     unit: String,
@@ -158,6 +160,7 @@ impl State {
                         cluster_name: item.cluster_name.clone(),
                         quantity: item.quantity.clone(),
                         sku: item.sku.clone(),
+                        group_name: item.group_name.clone(),
                         total_price_cents: item.total_price_cents.clone(),
                         unit: item.unit.clone(),
                         unit_price_dollars: item.unit_price_dollars.clone(),
@@ -193,6 +196,7 @@ impl State {
                                     cluster_name: item.cluster_name.clone(),
                                     quantity: item.quantity.clone(),
                                     sku: item.sku.clone(),
+                                    group_name: item.group_name.clone(),
                                     total_price_cents: item.total_price_cents.clone(),
                                     unit: item.unit.clone(),
                                     unit_price_dollars: item.unit_price_dollars.clone(),
@@ -218,6 +222,7 @@ impl State {
         for (_key, value) in map_total {
             let labels = [
                 ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
+                ("group_name", value.group_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
             ];
             metrics::gauge!("atlas_billing_item_cents_total", value.total_price_cents.clone() as f64, &labels);
@@ -226,6 +231,7 @@ impl State {
         for (_key, value) in map_rate {
             let labels = [
                 ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
+                ("group_name", value.group_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
             ];
 
