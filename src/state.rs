@@ -179,7 +179,7 @@ impl State {
                         log::debug!("Including {}. Difference is {}", key, difference);
                         metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars.clone() as f64, &labels);
                     } else {
-                        log::debug!("Skipping {}, as it is more than one day old. Difference is {}", key, difference);
+                        log::debug!("Skipping {}, as it is more than one day old. Difference is {}, and is more than {}", key, difference, chrono::Duration::hours(30));
                     }
                 },
                 Err(e) => {
