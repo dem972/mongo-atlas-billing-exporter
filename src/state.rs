@@ -172,10 +172,12 @@ impl State {
 
             match chrono::DateTime::parse_from_rfc3339(&value.end_date) {
                 Ok(end_date) => {
-                    if chrono::Utc::now() - end_date.with_timezone(&chrono::Utc) < chrono::Duration::hours(30) {
+                    let difference = chrono::Utc::now() - end_date.with_timezone(&chrono::Utc);
+                    if &difference < &chrono::Duration::hours(30) {
+                        log::debug!("Including {}. Difference is {}", key, difference);
                         metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars.clone() as f64, &labels);
                     } else {
-                        log::debug!("Skipping {}, as it is more than one day old", key);
+                        log::debug!("Skipping {}, as it is more than one day old. Difference is {}", key, difference);
                     }
                 },
                 Err(e) => {
