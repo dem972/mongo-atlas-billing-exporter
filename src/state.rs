@@ -140,10 +140,14 @@ impl State {
             match map.get_mut(&name) {
                 Some(k) => {
                     log::debug!("Found existing {} in map", &name);
+
+                    // Atlas prices sku's per region, so we need to get the sum
+                    k.unit_price_dollars = k.unit_price_dollars + item.unit_price_dollars;
                     k.total_price_cents = k.total_price_cents + item.total_price_cents;
                     k.quantity = k.quantity + item.quantity;
-                    k.unit_price_dollars = item.unit_price_dollars;
+
                     if item.end_date > k.end_date {
+                        log::debug!("{} superceeded by newer metric, updating end_date and unit price", &name);
                         k.end_date = item.end_date;
                     };
                 },
@@ -187,7 +191,6 @@ impl State {
                 }
             }
         }
-            
 
         Ok(())
     }
