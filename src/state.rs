@@ -176,7 +176,7 @@ impl State {
 
                         match map_rate.get_mut(&name) {
                             Some(k) => {
-                                log::debug!("Found existing {} in map_total", &name);
+                                log::debug!("Found existing {} in map_rate", &name);
 
                                 // Atlas prices sku's per region, so we need to get the sum
                                 k.total_price_cents = k.total_price_cents + item.total_price_cents;
@@ -188,7 +188,7 @@ impl State {
                                 };
                             },
                             None => {
-                                log::debug!("Did not find existing {} in map_total", &name);
+                                log::debug!("Did not find existing {} in map_rate", &name);
                                 let value = Compressed {
                                     cluster_name: item.cluster_name.clone(),
                                     quantity: item.quantity.clone(),
@@ -229,8 +229,8 @@ impl State {
                 ("sku", value.sku.clone()),
             ];
 
-            // Get overall rate
-            let rate = value.total_price_cents as f64 / value.quantity;
+            // Get overall rate in dollars
+            let rate = value.total_price_cents as f64 / value.quantity / 100;
             metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
         }
 
