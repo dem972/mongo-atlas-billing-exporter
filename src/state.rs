@@ -142,7 +142,6 @@ impl State {
                     log::debug!("Found existing {} in map", &name);
 
                     // Atlas prices sku's per region, so we need to get the sum
-                    k.unit_price_dollars = k.unit_price_dollars + item.unit_price_dollars;
                     k.total_price_cents = k.total_price_cents + item.total_price_cents;
                     k.quantity = k.quantity + item.quantity;
 
@@ -181,7 +180,10 @@ impl State {
                     let difference = chrono::Utc::now() - end_date.with_timezone(&chrono::Utc);
                     if &difference < &chrono::Duration::hours(30) {
                         log::debug!("Including {}. Difference is {}", key, difference);
-                        metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars.clone() as f64, &labels);
+
+                        // Get overall rate
+                        let rate = value.quantity / value.total_price_cents as f64;
+                        metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
                     } else {
                         log::debug!("Skipping {}, as it is more than one day old. Difference is {}, and is more than {}", key, difference, chrono::Duration::hours(30));
                     }
