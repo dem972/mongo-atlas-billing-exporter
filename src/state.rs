@@ -229,9 +229,16 @@ impl State {
                 ("sku", value.sku.clone()),
             ];
 
-            // Get overall rate in dollars
-            let rate = value.total_price_cents as f64 / value.quantity / 100.0;
-            metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
+            if value.unit == "GB hours" || value.unit == "server hours" {
+                // Get overall rate in cents per hour
+                let rate = value.total_price_cents as f64 / value.quantity / 100.0;
+                metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
+            } else {
+                // Convert cents per day to cents per hour
+                // Get overall rate in cents per hour
+                let rate = value.total_price_cents as f64 / value.quantity / 100.0 / 24.0;
+                metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
+            }
         }
 
         Ok(())
