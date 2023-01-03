@@ -127,7 +127,8 @@ impl State {
         let data = self.get_pending().await?;
         log::debug!("data: {:?}", data);
 
-        let mut map: HashMap<String, Compressed> = HashMap::new();
+        let mut map_total: HashMap<String, Compressed> = HashMap::new();
+        let mut map_rate: HashMap<String, Compressed> = HashMap::new();
 
         for item in data.line_items {
             let name = match &item.cluster_name {
@@ -137,9 +138,10 @@ impl State {
 
             log::debug!("Working on {}", name);
 
-            match map.get_mut(&name) {
+            // Add metric to the total HashMap
+            match map_total.get_mut(&name) {
                 Some(k) => {
-                    log::debug!("Found existing {} in map", &name);
+                    log::debug!("Found existing {} in map_total", &name);
 
                     // Atlas prices sku's per region, so we need to get the sum
                     k.total_price_cents = k.total_price_cents + item.total_price_cents;
@@ -147,11 +149,11 @@ impl State {
 
                     if item.end_date > k.end_date {
                         log::debug!("{} superceeded by newer metric, updating end_date and unit price", &name);
-                        k.end_date = item.end_date;
+                        k.end_date = item.end_date.clone();
                     };
                 },
                 None => {
-                    log::debug!("Did not find existing {} in map", &name);
+                    log::debug!("Did not find existing {} in map_total", &name);
                     let value = Compressed {
                         cluster_name: item.cluster_name.clone(),
                         quantity: item.quantity.clone(),
@@ -161,37 +163,75 @@ impl State {
                         unit_price_dollars: item.unit_price_dollars.clone(),
                         end_date: item.end_date.clone()
                     };
-                    map.insert(name, value);
+                    map_total.insert(name.clone(), value);
+                }
+            }
+
+            // Add metric to the rates HashMap, if metric is younger than 30 hours
+            match chrono::DateTime::parse_from_rfc3339(&item.end_date) {
+                Ok(end_date) => {
+                    let difference = chrono::Utc::now() - end_date.with_timezone(&chrono::Utc);
+                    if &difference < &chrono::Duration::hours(30) {
+                        log::debug!("Including {}. Difference is {}", name, difference);
+
+                        match map_rate.get_mut(&name) {
+                            Some(k) => {
+                                log::debug!("Found existing {} in map_total", &name);
+
+                                // Atlas prices sku's per region, so we need to get the sum
+                                k.total_price_cents = k.total_price_cents + item.total_price_cents;
+                                k.quantity = k.quantity + item.quantity;
+
+                                if item.end_date > k.end_date {
+                                    log::debug!("{} superceeded by newer metric, updating end_date and unit price", &name);
+                                    k.end_date = item.end_date;
+                                };
+                            },
+                            None => {
+                                log::debug!("Did not find existing {} in map_total", &name);
+                                let value = Compressed {
+                                    cluster_name: item.cluster_name.clone(),
+                                    quantity: item.quantity.clone(),
+                                    sku: item.sku.clone(),
+                                    total_price_cents: item.total_price_cents.clone(),
+                                    unit: item.unit.clone(),
+                                    unit_price_dollars: item.unit_price_dollars.clone(),
+                                    end_date: item.end_date.clone()
+                                };
+                                map_rate.insert(name, value);
+                            }
+                        }
+
+                    } else {
+                        log::debug!("Skipping {}, as it is more than one day old. Difference is {}, and is more than {}", name, difference, chrono::Duration::hours(30));
+                    }
+                },
+                Err(e) => {
+                    log::error!("Error converting end_date to Utc, skipping {}: {}", name, e);
                 }
             }
         }
 
-        log::debug!("{:?}", map);
+        log::debug!("Total: {:?}", map_total);
+        log::debug!("Rates: {:?}", map_rate);
 
-        for (key, value) in map {
+        for (_key, value) in map_total {
             let labels = [
                 ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
             ];
             metrics::gauge!("atlas_billing_item_cents_total", value.total_price_cents.clone() as f64, &labels);
+        }
 
-            match chrono::DateTime::parse_from_rfc3339(&value.end_date) {
-                Ok(end_date) => {
-                    let difference = chrono::Utc::now() - end_date.with_timezone(&chrono::Utc);
-                    if &difference < &chrono::Duration::hours(30) {
-                        log::debug!("Including {}. Difference is {}", key, difference);
+        for (_key, value) in map_rate {
+            let labels = [
+                ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
+                ("sku", value.sku.clone()),
+            ];
 
-                        // Get overall rate
-                        let rate = value.total_price_cents as f64 / value.quantity;
-                        metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
-                    } else {
-                        log::debug!("Skipping {}, as it is more than one day old. Difference is {}, and is more than {}", key, difference, chrono::Duration::hours(30));
-                    }
-                },
-                Err(e) => {
-                    log::error!("Error converting end_date to Utc, skipping {}: {}", key, e);
-                }
-            }
+            // Get overall rate
+            let rate = value.total_price_cents as f64 / value.quantity;
+            metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
         }
 
         Ok(())
