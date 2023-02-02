@@ -132,7 +132,6 @@ impl State {
 
         let mut map_total: HashMap<String, Compressed> = HashMap::new();
         let mut map_rate: HashMap<String, Compressed> = HashMap::new();
-        let mut map_rate_test: HashMap<String, Compressed> = HashMap::new();
 
         for item in data.line_items {
             let name = match &item.cluster_name {
@@ -192,13 +191,14 @@ impl State {
                         };
                         map_rate.insert(name, value);
                     } else if item.start_date == k.start_date {
+                        log::debug!("{} is already set in hashmap, and has the same start_date. Adding up price and quantity", &name);
                         // This metric has the same start date, indicating a SKU present in multiple regions
                         // Therefore, get the sum of all
                         // Atlas prices sku's per region, so we need to get the sum
                         k.total_price_cents = k.total_price_cents + item.total_price_cents;
                         k.quantity = k.quantity + item.quantity;
                     } else {
-                        log::debug!("{} already set in hashmap, and is newer", &name);
+                        log::debug!("{} is already set in hashmap, and is newer", &name);
                     }
                 },
                 None => {
@@ -217,52 +217,6 @@ impl State {
                     map_rate.insert(name, value);
                 }
             }
-
-//            // Add metric to the rates HashMap, if metric is younger than 30 hours
-//            match chrono::DateTime::parse_from_rfc3339(&item.end_date) {
-//                Ok(end_date) => {
-//                    let difference = chrono::Utc::now() - end_date.with_timezone(&chrono::Utc);
-//                    if &difference < &chrono::Duration::hours(30) {
-//                        log::debug!("Including {}. Difference is {}", name, difference);
-//
-//                        match map_rate.get_mut(&name) {
-//                            Some(k) => {
-//                                log::debug!("Found existing {} in map_rate", &name);
-//
-//                                // Atlas prices sku's per region, so we need to get the sum
-//                                k.total_price_cents = k.total_price_cents + item.total_price_cents;
-//                                k.quantity = k.quantity + item.quantity;
-//
-//                                if item.end_date > k.end_date {
-//                                    log::debug!("{} superceeded by newer metric, updating end_date and unit price", &name);
-//                                    k.end_date = item.end_date;
-//                                };
-//                            },
-//                            None => {
-//                                log::debug!("Did not find existing {} in map_rate", &name);
-//                                let value = Compressed {
-//                                    cluster_name: item.cluster_name.clone(),
-//                                    quantity: item.quantity.clone(),
-//                                    sku: item.sku.clone(),
-//                                    group_name: item.group_name.clone(),
-//                                    total_price_cents: item.total_price_cents.clone(),
-//                                    unit: item.unit.clone(),
-//                                    unit_price_dollars: item.unit_price_dollars.clone(),
-//                                    start_date: item.start_date.clone(),
-//                                    end_date: item.end_date.clone()
-//                                };
-//                                map_rate.insert(name, value);
-//                            }
-//                        }
-//
-//                    } else {
-//                        log::debug!("Skipping {}, as it is more than one day old. Difference is {}, and is more than {}", name, difference, chrono::Duration::hours(30));
-//                    }
-//                },
-//                Err(e) => {
-//                    log::error!("Error converting end_date to Utc, skipping {}: {}", name, e);
-//                }
-//            }
         }
 
         log::debug!("Total: {:?}", map_total);
