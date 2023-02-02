@@ -1,6 +1,6 @@
 [package]
 name = "mongo-atlas-billing-exporter"
-version = "0.0.26"
+version = "0.0.27"
 description = "mongo-atlas-billing-exporter"
 edition = "2021"
 
