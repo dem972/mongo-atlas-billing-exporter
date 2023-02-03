@@ -133,6 +133,9 @@ impl State {
         let mut map_total: HashMap<String, Compressed> = HashMap::new();
         let mut map_rate: HashMap<String, Compressed> = HashMap::new();
 
+        // Get most recent metric date across all metrics
+        let current_date = data.line_items.iter().max_by_key(|y| y.start_date.clone()).expect("unable to get current_date from metrics").start_date.clone();
+
         for item in data.line_items {
             let name = match &item.cluster_name {
                 Some(e) => format!("{}_{}", e, item.sku),
@@ -172,12 +175,21 @@ impl State {
                 }
             }
 
-            // Add most recent metrics to hashmap
-            match map_rate.get_mut(&name) {
-                Some(k) => {
-                    log::debug!("Found existing {} in map_rate", &name);
-                    if item.start_date > k.start_date {
-                        // This metric has a newer start time, and should replace the existing metric
+            // Only include metric if the start_date is today
+            if item.start_date == current_date {
+                // Add most recent metrics to hashmap
+                match map_rate.get_mut(&name) {
+                    Some(k) => {
+                        log::debug!("Found existing {} in map_rate", &name);
+                        log::debug!("{} is already set in hashmap, and has the same start_date. Adding up price and quantity", &name);
+                        // This metric has the same start date, indicating a SKU present in multiple regions
+                        // Therefore, get the sum of all
+                        // Atlas prices sku's per region, so we need to get the sum
+                        k.total_price_cents = k.total_price_cents + item.total_price_cents;
+                        k.quantity = k.quantity + item.quantity;
+                    },
+                    None => {
+                        log::debug!("Did not find existing {} in map_rate", &name);
                         let value = Compressed {
                             cluster_name: item.cluster_name.clone(),
                             quantity: item.quantity.clone(),
@@ -190,31 +202,7 @@ impl State {
                             end_date: item.end_date.clone()
                         };
                         map_rate.insert(name, value);
-                    } else if item.start_date == k.start_date {
-                        log::debug!("{} is already set in hashmap, and has the same start_date. Adding up price and quantity", &name);
-                        // This metric has the same start date, indicating a SKU present in multiple regions
-                        // Therefore, get the sum of all
-                        // Atlas prices sku's per region, so we need to get the sum
-                        k.total_price_cents = k.total_price_cents + item.total_price_cents;
-                        k.quantity = k.quantity + item.quantity;
-                    } else {
-                        log::debug!("{} is already set in hashmap, and is newer", &name);
                     }
-                },
-                None => {
-                    log::debug!("Did not find existing {} in map_rate", &name);
-                    let value = Compressed {
-                        cluster_name: item.cluster_name.clone(),
-                        quantity: item.quantity.clone(),
-                        sku: item.sku.clone(),
-                        group_name: item.group_name.clone(),
-                        total_price_cents: item.total_price_cents.clone(),
-                        unit: item.unit.clone(),
-                        unit_price_dollars: item.unit_price_dollars.clone(),
-                        start_date: item.start_date.clone(),
-                        end_date: item.end_date.clone()
-                    };
-                    map_rate.insert(name, value);
                 }
             }
         }
