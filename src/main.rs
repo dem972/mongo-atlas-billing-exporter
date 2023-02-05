@@ -1,10 +1,4 @@
-use axum::{
-    middleware::self,
-    handler::Handler,
-    routing::{get},
-    Router,
-    extract::Extension
-};
+use axum::{extract::Extension, handler::Handler, middleware, routing::get, Router};
 use chrono::Local;
 use clap::{crate_name, crate_version, App, Arg};
 use env_logger::{Builder, Target};
@@ -20,7 +14,7 @@ mod metrics;
 mod state;
 
 use crate::metrics::{setup_metrics_recorder, track_metrics};
-use handlers::{handler_404, health, help, root, metrics};
+use handlers::{handler_404, health, help, metrics, root};
 use https::create_https_client;
 use state::State;
 
@@ -49,12 +43,21 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
                 .takes_value(true),
         )
         .arg(
-            Arg::with_name("url")
-                .short("u")
-                .long("url")
-                .help("Set elastic reverse proxy")
+            Arg::with_name("public_key")
+                .short("k")
+                .long("public_key")
+                .help("Set MongoDB Atlas Public Key")
                 .required(true)
-                .env("ATLAS_BILLING_EXPORTER_REVERSE_PROXY")
+                .env("ATLAS_BILLING_EXPORTER_PUBLIC_KEY")
+                .takes_value(true),
+        )
+        .arg(
+            Arg::with_name("private_key")
+                .short("s")
+                .long("private_key")
+                .help("Set MongoDB Atlas Private Key")
+                .required(true)
+                .env("ATLAS_BILLING_EXPORTER_PRIVATE_KEY")
                 .takes_value(true),
         )
         .arg(
@@ -97,8 +100,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let recorder_handle = setup_metrics_recorder();
 
     // These should be authenticated
-    let base = Router::new()
-        .route("/", get(root));
+    let base = Router::new().route("/", get(root));
 
     // These should NOT be authenticated
     let standard = Router::new()
@@ -118,7 +120,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let app = app.fallback(handler_404.into_service());
 
     let addr = SocketAddr::from(([0, 0, 0, 0], port));
-    println!("Listening on {}", addr);
+    println!("Listening on {addr}");
     axum::Server::bind(&addr)
         .serve(app.into_make_service())
         .await?;

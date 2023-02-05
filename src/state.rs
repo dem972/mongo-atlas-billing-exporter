@@ -1,9 +1,11 @@
 use crate::https::HttpsClient;
 use clap::ArgMatches;
-use std::error::Error;
+use hyper::header::{HeaderValue, AUTHORIZATION};
 use hyper::{Body, Request, Response};
+use std::error::Error;
 //use serde_json::{Value};
-use url::Url;
+use digest_auth::AuthContext;
+//use url::Url;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
@@ -11,6 +13,8 @@ use crate::create_https_client;
 use crate::error::Error as RestError;
 
 type BoxResult<T> = Result<T, Box<dyn Error + Send + Sync>>;
+
+static URL: &str = "https://cloud.mongodb.com/api/atlas/v1.0";
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
 #[serde(rename_all = "camelCase")]
@@ -21,7 +25,7 @@ pub struct Data {
     credits_cents: u64,
     end_date: String,
     id: String,
-    line_items: Vec<LineItem>
+    line_items: Vec<LineItem>,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -36,7 +40,7 @@ pub struct LineItem {
     start_date: String,
     total_price_cents: u64,
     unit: String,
-    unit_price_dollars: f64
+    unit_price_dollars: f64,
 }
 
 #[derive(Serialize, Deserialize, Debug, Clone)]
@@ -50,14 +54,15 @@ pub struct Compressed {
     unit: String,
     unit_price_dollars: f64,
     end_date: String,
-    start_date: String
+    start_date: String,
 }
 
 #[derive(Clone, Debug)]
 pub struct State {
     pub client: HttpsClient,
-    pub url: Url,
-    pub org: String
+    pub public_key: String,
+    pub private_key: String,
+    pub org: String,
 }
 
 impl State {
@@ -73,13 +78,27 @@ impl State {
             });
 
         let client = create_https_client(timeout)?;
-        let url = opts.value_of("url").unwrap().parse().expect("Could not parse url");
-        let org = opts.value_of("org").unwrap().parse().expect("Could not get org id");
+        let public_key = opts
+            .value_of("public_key")
+            .unwrap()
+            .parse()
+            .expect("Could not parse public_key");
+        let private_key = opts
+            .value_of("private_key")
+            .unwrap()
+            .parse()
+            .expect("Could not parse private_key");
+        let org = opts
+            .value_of("org")
+            .unwrap()
+            .parse()
+            .expect("Could not get org id");
 
         Ok(State {
             client,
-            url,
-            org
+            public_key,
+            private_key,
+            org,
         })
     }
 
@@ -92,8 +111,8 @@ impl State {
     }
 
     pub async fn get(&self, path: &str) -> Result<Response<Body>, RestError> {
-        let uri = format!("{}/{}", &self.url, path);
-        log::debug!("getting url {}", &uri);
+        let uri = format!("{URL}/{path}");
+        log::debug!("getting initial response {}", &uri);
         let req = Request::builder()
             .method("GET")
             .uri(&uri)
@@ -109,19 +128,57 @@ impl State {
             }
         };
 
-        match response.status().as_u16() {
-            404 => return Err(RestError::NotFound),
-            403 => return Err(RestError::Forbidden),
-            401 => return Err(RestError::Unauthorized),
-            200 => {
-                Ok(response)
+        // Get digest headers, we are expecting a 401 status code
+        let mut www_auth_header = match response.status().as_u16() {
+            401 => match response.headers().get("WWW-Authenticate") {
+                Some(www_authenticate) => {
+                    digest_auth::parse(www_authenticate.to_str().unwrap_or("error"))?
+                }
+                None => {
+                    log::error!("Inital request did not yield www-authenticate header");
+                    return Err(RestError::MissingHeader);
+                }
+            },
+            _ => return Err(RestError::UnexpectedCode),
+        };
+
+        // Generate Digest Header Context
+        let context = AuthContext::new(self.public_key.clone(), self.private_key.clone(), path);
+
+        // Use context and compute with www_auth_header returned from API
+        let answer = www_auth_header.respond(&context)?;
+        let header_digest_auth = HeaderValue::from_str(&answer.to_string())?;
+
+        log::debug!("Using digest header for authenticated request{}", &uri);
+        let mut req2 = Request::builder()
+            .method("GET")
+            .uri(&uri)
+            .body(Body::empty())
+            .expect("request builder");
+
+        // Add auth header to second request
+        req2.headers_mut().insert(AUTHORIZATION, header_digest_auth);
+
+        // Send initial request
+        let response2 = match self.client.request(req2).await {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("{{\"error\":\"{}\"", e);
+                return Err(RestError::Hyper(e));
             }
+        };
+
+        match response2.status().as_u16() {
+            404 => Err(RestError::NotFound),
+            403 => Err(RestError::Forbidden),
+            401 => Err(RestError::Unauthorized),
+            200 => Ok(response2),
             _ => {
                 log::error!(
                     "Got bad status code getting config: {}",
                     response.status().as_u16()
                 );
-                return Err(RestError::UnknownCode)
+                Err(RestError::UnknownCode)
             }
         }
     }
@@ -134,12 +191,18 @@ impl State {
         let mut map_rate: HashMap<String, Compressed> = HashMap::new();
 
         // Get most recent metric date across all metrics
-        let current_date = data.line_items.iter().max_by_key(|y| y.start_date.clone()).expect("unable to get current_date from metrics").start_date.clone();
+        let current_date = data
+            .line_items
+            .iter()
+            .max_by_key(|y| y.start_date.clone())
+            .expect("unable to get current_date from metrics")
+            .start_date
+            .clone();
 
         for item in data.line_items {
             let name = match &item.cluster_name {
                 Some(e) => format!("{}_{}", e, item.sku),
-                None => item.sku.to_string()
+                None => item.sku.to_string(),
             };
 
             log::debug!("Working on {}", name);
@@ -150,26 +213,29 @@ impl State {
                     log::debug!("Found existing {} in map_total", &name);
 
                     // Atlas prices sku's per region, so we need to get the sum
-                    k.total_price_cents = k.total_price_cents + item.total_price_cents;
-                    k.quantity = k.quantity + item.quantity;
+                    k.total_price_cents += item.total_price_cents;
+                    k.quantity += item.quantity;
 
                     if item.end_date > k.end_date {
-                        log::debug!("{} superceeded by newer metric, updating end_date and unit price", &name);
+                        log::debug!(
+                            "{} superceeded by newer metric, updating end_date and unit price",
+                            &name
+                        );
                         k.end_date = item.end_date.clone();
                     };
-                },
+                }
                 None => {
                     log::debug!("Did not find existing {} in map_total", &name);
                     let value = Compressed {
                         cluster_name: item.cluster_name.clone(),
-                        quantity: item.quantity.clone(),
+                        quantity: item.quantity,
                         sku: item.sku.clone(),
                         group_name: item.group_name.clone(),
-                        total_price_cents: item.total_price_cents.clone(),
+                        total_price_cents: item.total_price_cents,
                         unit: item.unit.clone(),
-                        unit_price_dollars: item.unit_price_dollars.clone(),
+                        unit_price_dollars: item.unit_price_dollars,
                         start_date: item.start_date.clone(),
-                        end_date: item.end_date.clone()
+                        end_date: item.end_date.clone(),
                     };
                     map_total.insert(name.clone(), value);
                 }
@@ -185,21 +251,21 @@ impl State {
                         // This metric has the same start date, indicating a SKU present in multiple regions
                         // Therefore, get the sum of all
                         // Atlas prices sku's per region, so we need to get the sum
-                        k.total_price_cents = k.total_price_cents + item.total_price_cents;
-                        k.quantity = k.quantity + item.quantity;
-                    },
+                        k.total_price_cents += item.total_price_cents;
+                        k.quantity += item.quantity;
+                    }
                     None => {
                         log::debug!("Did not find existing {} in map_rate", &name);
                         let value = Compressed {
                             cluster_name: item.cluster_name.clone(),
-                            quantity: item.quantity.clone(),
+                            quantity: item.quantity,
                             sku: item.sku.clone(),
                             group_name: item.group_name.clone(),
-                            total_price_cents: item.total_price_cents.clone(),
+                            total_price_cents: item.total_price_cents,
                             unit: item.unit.clone(),
-                            unit_price_dollars: item.unit_price_dollars.clone(),
+                            unit_price_dollars: item.unit_price_dollars,
                             start_date: item.start_date.clone(),
-                            end_date: item.end_date.clone()
+                            end_date: item.end_date.clone(),
                         };
                         map_rate.insert(name, value);
                     }
@@ -216,7 +282,11 @@ impl State {
                 ("group_name", value.group_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
             ];
-            metrics::gauge!("atlas_billing_item_cents_total", value.total_price_cents.clone() as f64, &labels);
+            metrics::gauge!(
+                "atlas_billing_item_cents_total",
+                value.total_price_cents as f64,
+                &labels
+            );
         }
 
         for (_key, value) in map_rate {

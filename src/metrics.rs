@@ -1,8 +1,8 @@
-use axum::{http::Request, response::IntoResponse, middleware::Next};
+use axum::{http::Request, middleware::Next, response::IntoResponse};
+use core::time::Duration;
 use metrics_exporter_prometheus::{Matcher, PrometheusBuilder, PrometheusHandle};
 use metrics_util::MetricKindMask;
 use std::time::Instant;
-use core::time::Duration;
 
 pub fn setup_metrics_recorder() -> PrometheusHandle {
     const EXPONENTIAL_SECONDS: &[f64] = &[
@@ -38,7 +38,11 @@ pub async fn track_metrics<B>(req: Request<B>, next: Next<B>) -> impl IntoRespon
     ];
 
     metrics::increment_counter!("http_requests_total", &labels);
-    metrics::histogram!("atlas_billing_http_requests_duration_seconds", latency, &labels);
+    metrics::histogram!(
+        "atlas_billing_http_requests_duration_seconds",
+        latency,
+        &labels
+    );
 
     response
 }
