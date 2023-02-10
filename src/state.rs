@@ -205,24 +205,16 @@ impl State {
                 None => item.sku.to_string(),
             };
 
-            log::debug!("Working on {}", name);
+            log::debug!("Working on {} from {}", name, item.start_date);
 
             // Add metric to the total HashMap
             match map_total.get_mut(&name) {
                 Some(k) => {
-                    log::debug!("Found existing {} in map_total", &name);
+                    log::debug!("Found existing {} in map_total, adding up total", &name);
 
                     // Atlas prices sku's per region, so we need to get the sum
                     k.total_price_cents += item.total_price_cents;
                     k.quantity += item.quantity;
-
-                    if item.end_date > k.end_date {
-                        log::debug!(
-                            "{} superceeded by newer metric, updating end_date and unit price",
-                            &name
-                        );
-                        k.end_date = item.end_date.clone();
-                    };
                 }
                 None => {
                     log::debug!("Did not find existing {} in map_total", &name);
@@ -247,12 +239,11 @@ impl State {
                 match map_rate.get_mut(&name) {
                     Some(k) => {
                         log::debug!("Found existing {} in map_rate", &name);
-                        log::debug!("{} is already set in hashmap, and has the same start_date. Adding up price and quantity", &name);
                         // This metric has the same start date, indicating a SKU present in multiple regions
                         // Therefore, get the sum of all
                         // Atlas prices sku's per region, so we need to get the sum
-                        k.total_price_cents += item.total_price_cents;
-                        k.quantity += item.quantity;
+                        k.unit_price_dollars += item.unit_price_dollars;
+                        log::debug!("{} is already set in map_rate, and has the same start_date. Adding up total price to get {}", &name, k.unit_price_dollars);
                     }
                     None => {
                         log::debug!("Did not find existing {} in map_rate", &name);
@@ -296,16 +287,17 @@ impl State {
                 ("sku", value.sku.clone()),
             ];
 
-            if value.unit == "GB hours" || value.unit == "server hours" {
-                // Get overall rate in cents per hour
-                let rate = value.total_price_cents as f64 / value.quantity / 100.0;
-                metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
-            } else {
-                // Convert cents per day to cents per hour
-                // Get overall rate in cents per hour
-                let rate = value.total_price_cents as f64 / value.quantity / 100.0 / 24.0;
-                metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
-            }
+            metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars, &labels);
+//            if value.unit == "GB hours" || value.unit == "server hours" {
+//                // Get overall rate in cents per hour
+//                let rate = value.total_price_cents as f64 / value.quantity / 100.0;
+//                metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
+//            } else {
+//                // Convert cents per day to cents per hour
+//                // Get overall rate in cents per hour
+//                let rate = value.total_price_cents as f64 / value.quantity / 100.0 / 24.0;
+//                metrics::gauge!("atlas_billing_item_cents_rate", rate, &labels);
+//            }
         }
 
         Ok(())
