@@ -191,13 +191,13 @@ impl State {
         let mut map_rate: HashMap<String, Compressed> = HashMap::new();
 
         // Get most recent metric date across all metrics
-        let current_date = data
+        let current_date = match data
             .line_items
             .iter()
-            .max_by_key(|y| y.start_date.clone())
-            .expect("unable to get current_date from metrics")
-            .start_date
-            .clone();
+            .max_by_key(|y| y.start_date.clone()) {
+                Some(i) => i.start_date.clone(),
+                None => return Ok(())
+        };
 
         for item in data.line_items {
             let name = match &item.cluster_name {
