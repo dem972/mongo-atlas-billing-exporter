@@ -1,4 +1,6 @@
 use crate::https::HttpsClient;
+use chrono::Datelike;
+use chrono::Utc;
 use clap::ArgMatches;
 use hyper::header::{HeaderValue, AUTHORIZATION};
 use hyper::{Body, Request, Response};
@@ -7,6 +9,7 @@ use std::error::Error;
 use digest_auth::AuthContext;
 //use url::Url;
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use std::collections::HashMap;
 
 use crate::create_https_client;
@@ -110,6 +113,35 @@ impl State {
         Ok(value)
     }
 
+    pub async fn get_last_invoice_id(&self) -> Result<String, RestError> {
+        let path = format!("orgs/{}/invoices?itemsPerPage=2", self.org);
+        let body = self.get(&path).await?;
+        let bytes = hyper::body::to_bytes(body.into_body()).await?;
+        let value: Value = serde_json::from_slice(&bytes)?;
+
+        // Extract results array from json
+        let results = &value["results"].as_array().ok_or(RestError::NotFound)?;
+
+        // Extract the id field from the last item in results array
+        let id = &results
+            .last()
+            .ok_or(RestError::NotFound)?
+            .get("id")
+            .ok_or(RestError::NotFound)?;
+
+        Ok(id.to_string())
+    }
+
+    pub async fn get_last_invoice(&self) -> Result<Data, RestError> {
+        let id = self.get_last_invoice_id().await?;
+
+        let path = format!("orgs/{}/invoices/{}", self.org, id);
+        let body = self.get(&path).await?;
+        let bytes = hyper::body::to_bytes(body.into_body()).await?;
+        let value: Data = serde_json::from_slice(&bytes)?;
+        Ok(value)
+    }
+
     pub async fn get(&self, path: &str) -> Result<Response<Body>, RestError> {
         let uri = format!("{URL}/{path}");
         log::debug!("getting initial response {}", &uri);
@@ -184,19 +216,24 @@ impl State {
     }
 
     pub async fn get_metrics(&self) -> Result<(), RestError> {
-        let data = self.get_pending().await?;
+        let day = Utc::now().date_naive().day();
+
+        log::debug!("We are on the {} day of the month", day);
+
+        let data = match day {
+            1 => self.get_last_invoice().await?,
+            _ => self.get_pending().await?,
+        };
+
         log::debug!("data: {:?}", data);
 
         let mut map_total: HashMap<String, Compressed> = HashMap::new();
         let mut map_rate: HashMap<String, Compressed> = HashMap::new();
 
         // Get most recent metric date across all metrics
-        let current_date = match data
-            .line_items
-            .iter()
-            .max_by_key(|y| y.start_date.clone()) {
-                Some(i) => i.start_date.clone(),
-                None => return Ok(())
+        let current_date = match data.line_items.iter().max_by_key(|y| y.end_date.clone()) {
+            Some(i) => i.end_date.clone(),
+            None => return Ok(()),
         };
 
         for item in data.line_items {
@@ -205,7 +242,7 @@ impl State {
                 None => item.sku.to_string(),
             };
 
-            log::debug!("Working on {} from {}", name, item.start_date);
+            log::debug!("Working on {} from {}", name, item.end_date);
 
             // Add metric to the total HashMap
             match map_total.get_mut(&name) {
@@ -233,8 +270,8 @@ impl State {
                 }
             }
 
-            // Only include metric if the start_date is today
-            if item.start_date == current_date {
+            // Only include metric if the end_date is today
+            if item.end_date == current_date {
                 // Add most recent metrics to hashmap
                 match map_rate.get_mut(&name) {
                     Some(k) => {
@@ -243,7 +280,7 @@ impl State {
                         // Therefore, get the sum of all
                         // Atlas prices sku's per region, so we need to get the sum
                         k.unit_price_dollars += item.unit_price_dollars;
-                        log::debug!("{} is already set in map_rate, and has the same start_date. Adding up total price to get {}", &name, k.unit_price_dollars);
+                        log::debug!("{} is already set in map_rate, and has the same end_date. Adding up total price to get {}", &name, k.unit_price_dollars);
                     }
                     None => {
                         log::debug!("Did not find existing {} in map_rate", &name);
@@ -289,7 +326,11 @@ impl State {
 
             if value.unit == "GB hours" || value.unit == "server hours" {
                 // Get overall rate in cents per hour
-                metrics::gauge!("atlas_billing_item_cents_rate", value.unit_price_dollars, &labels);
+                metrics::gauge!(
+                    "atlas_billing_item_cents_rate",
+                    value.unit_price_dollars,
+                    &labels
+                );
             } else {
                 // Convert cents per day to cents per hour
                 // Get overall rate in cents per hour
