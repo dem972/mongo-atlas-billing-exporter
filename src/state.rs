@@ -129,7 +129,7 @@ impl State {
             .get("id")
             .ok_or(RestError::NotFound)?;
 
-        Ok(id.to_string())
+        Ok(id.as_str().expect("Cannot unwrap id as string!").to_owned())
     }
 
     pub async fn get_last_invoice(&self) -> Result<Data, RestError> {
