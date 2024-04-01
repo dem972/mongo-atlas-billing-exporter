@@ -2,6 +2,8 @@
 
 Prometheus exporter for MongoDB Atlas billing info.
 
+Published to the Docker [Registry](https://hub.docker.com/r/findelabs/mongo-atlas-billing-exporter).
+
 ### Usage
 
 ```
