@@ -2,31 +2,53 @@ name: Publish Docker image
 
 on:
   push:
-    tags:
-      - '*'
+    branches: [ "main" ]
+    # Publish semver tags as releases.
+    tags: [ 'v*.*.*' ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
 
 jobs:
   push_to_registry:
     name: Push Docker image to Docker Hub
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
     steps:
       - name: Check out the repo
-        uses: actions/checkout@v2
-      
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
+        uses: actions/checkout@v4
+
+      - name: Install cosign
+        if: github.event_name != 'pull_request'
+        uses: sigstore/cosign-installer@f3c664df7af409cb4873aa5068053ba9d61a57b6 #v2.6.0
         with:
-          username: ${{ secrets.DOCKER_USERNAME }}
-          password: ${{ secrets.DOCKER_PASSWORD }}
+          cosign-release: 'v1.11.0'
+
+      - name: Setup Docker buildx
+        uses: docker/setup-buildx-action@v4
       
-      - name: Extract metadata (tags, labels) for Docker
+      - name: Log into registry ${{ env.REGISTRY }}
+        if: github.event_name != 'pull_request'
+        uses: docker/login-action@28218f9b04b4f3f62068d7b6ce6ca5b26e35336c
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+       
+      - name: Extract Docker metadata
         id: meta
         uses: docker/metadata-action@v4
         with:
-          images: findelabs/mongo-atlas-billing-exporter
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
       
       - name: Rebuild Cache
-        uses: actions/cache@v3
+        uses: actions/cache@v4
         with:
           path: |
             ~/.cargo/bin/
@@ -37,9 +59,16 @@ jobs:
           key: ${{ runner.os }}-cargo-${{ hashFiles('**/Cargo.lock') }}
 
       - name: Build and push Docker image
-        uses: docker/build-push-action@v2
+        id: build-and-push
+        uses: docker/build-push-action@v4
         with:
-          context: .
-          push: true
+          context: "{{defaultContext}}:src"
+          push: ${{ github.event_name != 'pull_request' }} # Don't push on PR
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
+
+       #Sign the image with cosign
+      - name: Sign the image with cosign
+        if: github.event_name != 'pull_request'
+        run: |
+        cosign sign --key cosign.key ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tags }}
