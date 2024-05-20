@@ -41,6 +41,7 @@ pub struct LineItem {
     group_name: Option<String>,
     sku: String,
     start_date: String,
+    tags: Option<Option<HashMap<String, Vec<String>>>>,
     total_price_cents: u64,
     unit: String,
     unit_price_dollars: f64,
@@ -56,6 +57,7 @@ pub struct Compressed {
     total_price_cents: u64,
     unit: String,
     unit_price_dollars: f64,
+    tags: Option<Option<HashMap<String, Vec<String>>>>,
     end_date: String,
     start_date: String,
 }
@@ -263,6 +265,7 @@ impl State {
                         total_price_cents: item.total_price_cents,
                         unit: item.unit.clone(),
                         unit_price_dollars: item.unit_price_dollars,
+                        tags: item.tags.clone(),
                         start_date: item.start_date.clone(),
                         end_date: item.end_date.clone(),
                     };
@@ -292,6 +295,7 @@ impl State {
                             total_price_cents: item.total_price_cents,
                             unit: item.unit.clone(),
                             unit_price_dollars: item.unit_price_dollars,
+                            tags: item.tags.clone(),
                             start_date: item.start_date.clone(),
                             end_date: item.end_date.clone(),
                         };
@@ -305,10 +309,18 @@ impl State {
         log::debug!("Rates: {:?}", map_rate);
 
         for (_key, value) in map_total {
+            let project = match value.tags {
+                Some(inner_option) => match inner_option {
+                    Some(map) => map.get("project").and_then(|v| v.get(0)).map(|val| val.clone()),
+                    None => None,
+                },
+                None => None,
+            };            
             let labels = [
                 ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
                 ("group_name", value.group_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
+                ("project", project.unwrap_or("".to_string())),
             ];
             metrics::gauge!(
                 "atlas_billing_item_cents_total",
@@ -318,10 +330,18 @@ impl State {
         }
 
         for (_key, value) in map_rate {
+            let project = match value.tags {
+                Some(inner_option) => match inner_option {
+                    Some(map) => map.get("project").and_then(|v| v.get(0)).map(|val| val.clone()),
+                    None => None,
+                },
+                None => None,
+            };           
             let labels = [
                 ("cluster_name", value.cluster_name.unwrap_or("".to_string())),
                 ("group_name", value.group_name.unwrap_or("".to_string())),
                 ("sku", value.sku.clone()),
+                ("project", project.unwrap_or("".to_string())),
             ];
 
             if value.unit == "GB hours" || value.unit == "server hours" {

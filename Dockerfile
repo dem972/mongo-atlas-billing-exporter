@@ -1,17 +1,27 @@
 from rust:bookworm as builder
 
-RUN mkdir /app 
-RUN mkdir /app/bin 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+		libssl-dev=3.0.11-1~deb12u2 \
+		pkg-config=1.8.1-1 && \
+	apt-get autoremove -y && \
+	apt-get clean  && \ 
+    rm -rf /var/lib/apt/lists/* && \
+	mkdir /app  && \
+	mkdir /app/bin 
 
 COPY src /app/src/
 COPY Cargo.toml /app
 
-RUN apt-get update && apt-get install -y libssl-dev pkg-config
-RUN cargo install --path /app --root /app
-RUN strip app/bin/mongo-atlas-billing-exporter
+RUN cargo install --path /app --root /app  && \
+	strip app/bin/mongo-atlas-billing-exporter
+
 
 FROM debian:bookworm-slim
-RUN apt-get update && apt install -y openssl
+RUN apt-get update && apt-get install -y --no-install-recommends \
+		openssl=3.0.11-1~deb12u2 && \
+	apt-get autoremove -y && \
+    apt-get clean && \ 
+    rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 COPY --from=builder /app/bin/ ./
 
