@@ -66,9 +66,3 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }} # Don't push on PR
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-
-       #Sign the image with cosign
-      - name: Sign the image with cosign
-        if: github.event_name != 'pull_request'
-        run: |
-        cosign sign --key cosign.key ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}:${{ steps.meta.outputs.tags }}
