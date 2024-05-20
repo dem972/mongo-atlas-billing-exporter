@@ -61,6 +61,6 @@ jobs:
         uses: docker/build-push-action@v4
         with:
           context: "{{defaultContext}}:src"
-          push: ${{ github.event_name != 'pull_request' }} # Don't push on PR
+          push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
